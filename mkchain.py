@@ -4,6 +4,7 @@ import pprint
 import stat
 import sys
 from argparse import ArgumentParser
+from binascii import hexlify
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Dict
@@ -11,13 +12,17 @@ from typing import Dict
 from Savoir import Savoir
 
 _logger = logging.getLogger("mkchain")
-_api = None
-_mc_folder = None
+_mc_bin_folder = None
+MULTICHAIN_HOME = Path.home() / ".multichain"
+
+
+def chain_path(chain_name: str) -> Path:
+    return MULTICHAIN_HOME / chain_name
 
 
 def load_config(chain_name: str, config_name: str) -> Dict[str, str]:
-    _logger.debug(f"parse_config(chain_name={chain_name}, config_name={config_name}")
-    path = Path.home() / ".multichain" / chain_name / config_name
+    _logger.debug(f"load_config(chain_name={chain_name}, config_name={config_name})")
+    path = chain_path(chain_name) / config_name
     config = {}
     with open(path) as f:
         for line in f:
@@ -27,30 +32,33 @@ def load_config(chain_name: str, config_name: str) -> Dict[str, str]:
     return config
 
 
-def create_api(chain_name: str):
-    global _api
-    if not _api:
+class RpcApi:
+    def __init__(self, chain_name: str):
         config = load_config(chain_name, "multichain.conf")
         params = load_config(chain_name, "params.dat")
-        _api = Savoir(config["rpcuser"], config["rpcpassword"], "localhost", params["default-rpc-port"], chain_name)
+        self._api = Savoir(config["rpcuser"], config["rpcpassword"], "localhost", params["default-rpc-port"],
+                           chain_name)
+
+    @property
+    def api(self):
+        return self._api
 
 
 def create_chain(chain_name: str, warn: bool):
     _logger.debug(f"create_chain(chain_name={chain_name!r}, warn={warn})")
-    chain_path = Path.home() / ".multichain" / chain_name
     script = ["#! /usr/bin/env bash", ""]
-    if _mc_folder:
-        script.append(f"export PATH={_mc_folder}:$PATH")
-    if chain_path.exists():
+    if _mc_bin_folder:
+        script.append(f"export PATH={_mc_bin_folder}:$PATH")
+    if chain_path(chain_name).exists():
         if warn:
             message = f"Chain '{chain_name}' already exists. Please choose another name."
             _logger.error(message)
             raise ValueError(message)
-        if os.system("ps -ef | grep multichaind | grep -v grep") != 0:
+        if os.system(f"ps -ef | grep multichaind {chain_name} | grep -v grep") == 0:
             cmd = f"multichain-cli {chain_name} stop"
             script += [f'echo ">>> {cmd}"', cmd, "sleep 1"]
 
-        cmd = f"rm -rf {chain_path}"
+        cmd = f"rm -rf {chain_path(chain_name)}"
         script += [f'echo ">>> {cmd}"', cmd]
 
     cmd = f"multichain-util create {chain_name}"
@@ -71,51 +79,71 @@ def create_chain(chain_name: str, warn: bool):
     os.remove(tmpfile.name)
 
 
-def adjust_config(chain_name: str) -> str:
+def adjust_config(chain_name: str):
     _logger.debug(f"adjust_config(chain_name={chain_name!r})")
     params = load_config(chain_name, "params.dat")
-    _logger.info(f"rpc port = {params['default-rpc-port']}")
-    with open(Path.home() / ".multichain" / chain_name / "multichain.conf", "a") as f:
+    _logger.debug(f"rpc port = {params['default-rpc-port']}")
+    with open(chain_path(chain_name) / "multichain.conf", "a") as f:
         f.write(f"rpcport={params['default-rpc-port']}\n")
-    return params['default-rpc-port']
 
 
-def create_stream(chain_name: str, stream_name: str):
-    _logger.debug(f"create_stream(chain_name={chain_name!r}, stream_name={stream_name!r})")
-    _api.create("stream", stream_name, False)
-    _api.publish(stream_name, "key1", "11223344aa")
+def create_cache(chain_name: str, data: bytes) -> str:
+    rpc_api = RpcApi(chain_name)
+    api = rpc_api.api
+
+    cache_ident = api.createbinarycache()
+    _logger.debug(f"create_cache(chain_name={chain_name!r}, data={data!r}) -> cache_ident={cache_ident!r}")
+    api.appendbinarycache(cache_ident, data.hex())
+    return cache_ident
+
+
+def create_stream(chain_name: str, stream_name: str, cache_ident: str):
+    rpc_api = RpcApi(chain_name)
+    api = rpc_api.api
+
+    _logger.debug(f"create_stream(chain_name={chain_name!r}, stream_name={stream_name!r}, cache_ident={cache_ident!r})")
+    api.create("stream", stream_name, False)
+    bin_data = hexlify(os.urandom(500))
+    api.publish(stream_name, "key1", bin_data.decode())
+    api.publish(stream_name, "key2",
+                {"text": "Hello there! I am a pretty long string, so it should be truncated on display"})
+    api.publish(stream_name, "key3", {"cache": cache_ident})
     keys = [f"key{i}" for i in range(10, 20)]
     data = {"json": {"First": 1, "second": ["one", "two", "three", "four", "five"]}}
-    _api.publish(stream_name, keys, data)
-    _api.publish(stream_name, "key4",
-                 {"text": "Hello there! I am a pretty long string, so it should be truncated on display"})
-    _api.liststreamitems(stream_name)
+    api.publish(stream_name, keys, data)
+    if _logger.isEnabledFor(logging.DEBUG):
+        result = api.liststreamitems(stream_name)
+        pprint.pprint(result)
 
 
 def create_asset(chain_name: str, asset_name: str):
+    rpc_api = RpcApi(chain_name)
+    api = rpc_api.api
+
     _logger.debug(f"create_asset(chain_name={chain_name!r}, asset_name={asset_name!r})")
-    result = _api.listpermissions("issue")
-    address1 = result[0]["address"]
-    result = _api.createkeypairs()
-    address2 = result[0]["address"]
-    _api.importaddress(address2, "external")
-    _api.grant(address2, "receive")
-    _api.issue(address1, asset_name, 1000)
-    tx_id = _api.sendwithdatafrom(address1, address2, {asset_name: 100},
-                                  {"text": "I just sent 100 asset1 units to the external address I created earlier"})
+    address1 = api.listpermissions("issue")[0]["address"]
+    address2 = api.createkeypairs()[0]["address"]
+    api.importaddress(address2, "external")
+    api.grant(address2, "receive")
+    api.issue(address1, asset_name, 1000)
+    bin_data = hexlify(os.urandom(500))
+    tx_id = api.sendwithdatafrom(address1, address2, {asset_name: 100}, bin_data.decode())
     if _logger.isEnabledFor(logging.DEBUG):
-        result = _api.getassettransaction(asset_name, tx_id)
-        pprint.pprint(result)
-    tx_id = _api.sendwithdatafrom(address1, address2, {asset_name: 200},
-                                  {"json": {"name": "Zvi Tarem",
-                                            "message": "I just sent 200 more asset1 units to the same external address I created earlier"}})
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+    tx_id = api.sendwithdatafrom(address1, address2, {asset_name: 150},
+                                 {"text": "I just sent 100 asset1 units to the external address I created earlier"})
     if _logger.isEnabledFor(logging.DEBUG):
-        result = _api.getassettransaction(asset_name, tx_id)
-        pprint.pprint(result)
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+    tx_id = api.sendwithdatafrom(address1, address2, {asset_name: 200},
+                                 {"json": {"name": "Zvi Tarem",
+                                           "message": "I just sent 200 more asset1 units to the same external address"
+                                                      " I created earlier"}})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
 
 
 def get_options():
-    global _mc_folder
+    global _mc_bin_folder
 
     parser = ArgumentParser(description="Build a new chain with a stream")
     parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to log")
@@ -134,7 +162,7 @@ def get_options():
     if options.verbose:
         _logger.setLevel(logging.DEBUG)
     if options.mcfolder:
-        _mc_folder = Path(options.mcfolder)
+        _mc_bin_folder = Path(options.mcfolder)
 
     _logger.info(f"mkchain.py - {parser.description}")
     _logger.info(f"  Chain:     {options.chain}")
@@ -152,10 +180,10 @@ def main():
     options = get_options()
 
     create_chain(options.chain, options.warn)
-    create_api(options.chain)
-    rpc_port = adjust_config(options.chain)
+    adjust_config(options.chain)
+    cache_ident = create_cache(options.chain, "This is a pretty long ASCII chunk in the binary cache".encode())
     if not options.nostream:
-        create_stream(options.chain, options.stream)
+        create_stream(options.chain, options.stream, cache_ident)
     if not options.noasset:
         create_asset(options.chain, options.asset)
     return 0
