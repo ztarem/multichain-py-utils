@@ -1,6 +1,8 @@
 import logging
 import os
 import pprint
+import shlex
+import signal
 import stat
 import sys
 from argparse import ArgumentParser
@@ -9,11 +11,15 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Dict
 
+import psutil
 from Savoir import Savoir
 
 _logger = logging.getLogger("mkchain")
 _mc_bin_folder = None
 MULTICHAIN_HOME = Path.home() / ".multichain"
+
+address1 = None
+address2 = None
 
 
 def chain_path(chain_name: str) -> Path:
@@ -44,6 +50,24 @@ class RpcApi:
         return self._api
 
 
+def kill_multichaind_processes(chain_name: str):
+    def cmdline2str(p: psutil.Process) -> str:
+        return ' '.join(shlex.quote(arg) for arg in p.cmdline())
+
+    procs = []
+    for p in psutil.process_iter(attrs=("cmdline",)):
+        cmdline = p.info["cmdline"]
+        if len(cmdline) >= 2 and cmdline[0] == "multichaind" and cmdline[1] == chain_name:
+            procs.append(p)
+    for p in procs:
+        _logger.info(f"Terminating process {p.pid}: {cmdline2str(p)}")
+        p.send_signal(signal.SIGTERM)
+    gone, alive = psutil.wait_procs(procs, timeout=2)
+    for p in alive:
+        _logger.info(f"Killing process {p.pid}: {cmdline2str(p)}")
+        p.kill()
+
+
 def create_chain(chain_name: str, warn: bool):
     _logger.debug(f"create_chain(chain_name={chain_name!r}, warn={warn})")
     script = ["#! /usr/bin/env bash", ""]
@@ -54,9 +78,7 @@ def create_chain(chain_name: str, warn: bool):
             message = f"Chain '{chain_name}' already exists. Please choose another name."
             _logger.error(message)
             raise ValueError(message)
-        if os.system(f"ps -ef | grep multichaind {chain_name} | grep -v grep") == 0:
-            cmd = f"multichain-cli {chain_name} stop"
-            script += [f'echo ">>> {cmd}"', cmd, "sleep 1"]
+        kill_multichaind_processes(chain_name)
 
         cmd = f"rm -rf {chain_path(chain_name)}"
         script += [f'echo ">>> {cmd}"', cmd]
@@ -117,6 +139,8 @@ def create_stream(chain_name: str, stream_name: str, cache_ident: str):
 
 
 def create_asset(chain_name: str, asset_name: str):
+    global address1, address2
+
     rpc_api = RpcApi(chain_name)
     api = rpc_api.api
 
@@ -127,6 +151,9 @@ def create_asset(chain_name: str, asset_name: str):
     api.grant(address2, "receive")
     api.issue(address1, asset_name, 1000)
     bin_data = hexlify(os.urandom(500))
+    tx_id = api.sendfrom(address1, address2, {asset_name: 50})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
     tx_id = api.sendwithdatafrom(address1, address2, {asset_name: 100}, bin_data.decode())
     if _logger.isEnabledFor(logging.DEBUG):
         pprint.pprint(api.getrawtransaction(tx_id, 1))
@@ -140,6 +167,26 @@ def create_asset(chain_name: str, asset_name: str):
                                                       " I created earlier"}})
     if _logger.isEnabledFor(logging.DEBUG):
         pprint.pprint(api.getrawtransaction(tx_id, 1))
+
+
+def create_upgrade(chain_name: str):
+    rpc_api = RpcApi(chain_name)
+    api = rpc_api.api
+
+    _logger.debug(f"create_upgrade(chain_name={chain_name!r})")
+    # tx_id = api.create("upgrade", "upgradeProtocol", False, {"protocol-version": 20001})
+    # if "error" in tx_id:
+    #     return
+    # if _logger.isEnabledFor(logging.DEBUG):
+    #     pprint.pprint(api.getrawtransaction(tx_id, 1))
+    tx_id = api.create("upgrade", "upgradeStuff", False,
+                       {"max-std-element-size": 60000, "max-std-op-drops-count": 7})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+    tx_id = api.approvefrom(address1, "upgradeStuff", True)
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+        pprint.pprint(api.listupgrades())
 
 
 def get_options():
@@ -186,6 +233,7 @@ def main():
         create_stream(options.chain, options.stream, cache_ident)
     if not options.noasset:
         create_asset(options.chain, options.asset)
+    create_upgrade(options.chain)
     return 0
 
 
