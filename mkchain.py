@@ -60,9 +60,9 @@ def kill_multichaind_processes(chain_name: str):
 
 def create_chain(chain_name: str, warn: bool):
     _logger.debug(f"create_chain(chain_name={chain_name!r}, warn={warn})")
-    script = ["#! /usr/bin/env bash", ""]
     if _mc_bin_folder:
-        script.append(f"export PATH={_mc_bin_folder}:$PATH")
+        os.environ["PATH"] = _mc_bin_folder + os.pathsep + os.environ["PATH"]
+        _logger.info(f'>>> Set $PATH={os.environ["PATH"]}')
     if chain_path(chain_name).exists():
         if warn:
             message = f"Chain '{chain_name}' already exists. Please choose another name."
@@ -77,7 +77,7 @@ def create_chain(chain_name: str, warn: bool):
     _logger.info(f">>> {cmd}")
     os.system(cmd)
 
-    cmd = ["multichaind", chain_name, "-daemon", "-autosubscribe=assets,streams", "-debug=mcapi"]
+    cmd = ["multichaind", chain_name, "-daemon", "-autosubscribe=assets,streams", "-debug"]
     _logger.info(f">>> {' '.join(cmd)}")
     Popen(cmd, stderr=STDOUT, close_fds=True)
     sleep(1)
@@ -110,15 +110,13 @@ def create_stream(chain_name: str, api: Savoir, stream_name: str, cache_ident: s
     api.publish(stream_name, "key2",
                 {"text": "Hello there! I am a pretty long string, so it should be truncated on display"})
     api.publish(stream_name, "key3", {"cache": cache_ident})
-    # tx_id = api.publish(stream_name, "key4", {"text": "hello"}, "offchain")
-    # if _logger.isEnabledFor(logging.DEBUG):
-    #     pprint.pprint(api.getrawtransaction(tx_id, 1))
-    keys = [f"key{i}" for i in range(10, 20)]
-    data = {"json": {"First": 1, "second": ["one", "two", "three", "four", "five"]}}
-    api.publish(stream_name, keys, data)
+    tx_id = api.publish(stream_name, "key4", {"text": "hello"}, "offchain")
     if _logger.isEnabledFor(logging.DEBUG):
-        result = api.liststreamitems(stream_name)
-        pprint.pprint(result)
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+    api.publish(stream_name, [f"key{i}" for i in range(10, 20)],
+                {"json": {"First": 1, "second": ["one", "two", "three", "four", "five"]}})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.liststreamitems(stream_name))
 
 
 def create_asset(chain_name: str, api: Savoir, asset_name: str):
@@ -127,9 +125,19 @@ def create_asset(chain_name: str, api: Savoir, asset_name: str):
     _logger.debug(f"create_asset(chain_name={chain_name!r}, asset_name={asset_name!r})")
     address1 = api.listpermissions("issue")[0]["address"]
     address2 = api.createkeypairs()[0]["address"]
+    address3 = api.getnewaddress()
     api.importaddress(address2, "external")
     api.grant(address2, "receive")
+    api.grant(address3, "send,receive")
     api.issue(address1, asset_name, 1000, 1, 0, {"x": ["ex", "X"], "y": "why?"})
+
+    tx_id = api.sendfrom(address1, address3, {asset_name: 10, "data": {"json": [1, 2, 3]}})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+    tx_id = api.sendfrom(address3, address1, {asset_name: 10})
+    if _logger.isEnabledFor(logging.DEBUG):
+        pprint.pprint(api.getrawtransaction(tx_id, 1))
+
     tx_id = api.sendfrom(address1, address2, {asset_name: 50})
     if _logger.isEnabledFor(logging.DEBUG):
         pprint.pprint(api.getrawtransaction(tx_id, 1))
@@ -149,7 +157,7 @@ def create_asset(chain_name: str, api: Savoir, asset_name: str):
                                                       " I created earlier"}})
     if _logger.isEnabledFor(logging.DEBUG):
         pprint.pprint(api.getrawtransaction(tx_id, 1))
-        tx_id = api.issue(address1, {"name": asset_name + "X", "open": True, "restrict": "send"}, 5000, 0.01, 0)
+    tx_id = api.issue(address1, {"name": asset_name + "X", "open": True, "restrict": "send"}, 5000, 0.01, 0)
     if _logger.isEnabledFor(logging.DEBUG):
         pprint.pprint(api.getrawtransaction(tx_id, 1))
 
@@ -198,7 +206,7 @@ def get_options():
     if options.verbose:
         _logger.setLevel(logging.DEBUG)
     if options.mcfolder:
-        _mc_bin_folder = Path(options.mcfolder)
+        _mc_bin_folder = options.mcfolder
 
     _logger.info(f"mkchain.py - {parser.description}")
     _logger.info(f"  Chain:     {options.chain}")
