@@ -15,7 +15,7 @@ import psutil
 from Savoir import Savoir
 
 _logger = logging.getLogger("mkchain")
-_mc_bin_folder = None
+MULTICHAIN_BIN_DIR = None
 MULTICHAIN_HOME = Path.home() / ".multichain"
 
 address1 = None
@@ -60,8 +60,8 @@ def kill_multichaind_processes(chain_name: str):
 
 def create_chain(chain_name: str, warn: bool):
     _logger.debug(f"create_chain(chain_name={chain_name!r}, warn={warn})")
-    if _mc_bin_folder:
-        os.environ["PATH"] = _mc_bin_folder + os.pathsep + os.environ["PATH"]
+    if MULTICHAIN_BIN_DIR:
+        os.environ["PATH"] = MULTICHAIN_BIN_DIR + os.pathsep + os.environ["PATH"]
         _logger.info(f'>>> Set $PATH={os.environ["PATH"]}')
     if chain_path(chain_name).exists():
         if warn:
@@ -186,7 +186,7 @@ def create_paused_transaction(chain_name: str, api: Savoir, stream_name: str):
 
 
 def get_options():
-    global _mc_bin_folder
+    global MULTICHAIN_BIN_DIR
 
     parser = ArgumentParser(description="Build a new chain with a stream")
     parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to log")

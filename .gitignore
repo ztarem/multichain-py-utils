@@ -3,3 +3,6 @@ venv*/
 .idea/
 *.log
 *.sh
+*.bin
+*.dat
+*.lock
