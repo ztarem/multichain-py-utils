@@ -14,6 +14,7 @@ _logger = logging.getLogger(module_name)
 MULTICHAIN_BIN_DIR = Path("usr", "local", "bin")
 MULTICHAIN_HOME = Path.home() / ".multichain"
 CHAIN_NAME = "chain1"
+DATA_MARKER = '$DATA'
 
 HEADER = r"""
 #!/usr/bin/env bash
@@ -48,21 +49,29 @@ def sq(s: str) -> str:
     return f"'{s}'"
 
 
+def j(o: object) -> str:
+    """ Prepare object `o` to be passed to a JSON-API command.
+
+    The function converts `o` to JSON and wraps it in single quotes.
+    """
+    return sq(json.dumps(o))
+
+
 def hex_data(length: int = 50) -> str:
     """ Generate a random string with `length` hexadecimal characters. """
-    return ''.join(random.choices(string.hexdigits, k=length))
+    return ''.join(random.choices(string.hexdigits, k=length)).lower()
 
 
-def text_data(length: int = 50) -> str:
+def text_data(length: int = 50) -> object:
     """ Generate a random multichain text data string with `length` characters. """
     message = ''.join(random.choices(string.ascii_letters, k=length))
-    return json.dumps({"text": message})
+    return {"text": message}
 
 
-def json_data(length: int = 50) -> str:
+def json_data(length: int = 50) -> object:
     """ Generate a random multichain JSON data string with a message of `length` characters. """
     message = ''.join(random.choices(string.ascii_letters, k=length))
-    return json.dumps({"json": {"list": [1, 2, 3], "message": message}})
+    return {"json": {"list": [1, 2, 3], "message": message}}
 
 
 def raw_command(*cmd) -> str:
@@ -105,16 +114,22 @@ def gen_commands(*cmd, var_name: str = None) -> List[str]:
             txout=`multichain-cli chain1 publish stream1 key2 "012345"`
         ]
 
-    Some command parts may contain the string "{DATA}". In this case, the functions emits separate commands with data
-    of the types: hex, text, and JSON. Every occurrence of "{DATA}" is replaced with randomly generated data of the
-    correct type.
+    Some command parts may contain the string `DATA_MARKER` = '$DATA'. In this case, the functions emits separate
+    commands with data of the types: hex, text, and JSON. Every occurrence of "$DATA" is replaced with randomly
+    generated data of the correct type.
 
     For example::
 
-        gen_commands('publish', 'stream1', 'key2', '{DATA}')
+        gen_commands('sendfrom', '$address1', '$address2', j({"asset1": 10, "data": DATA_MARKER}))
+        gen_commands('publish', 'stream1', 'key2', dq(DATA_MARKER))
 
     Output::
 
+        [
+            multichain-cli chain1 sendfrom $address1 $address2 '{"asset1": 10, "data": "feacfbd639b6a6fdcec72f34beca5c4d1fb99a5b456c5ccf1c"}'
+            multichain-cli chain1 sendfrom $address1 $address2 '{"asset1": 10, "data": {"text": "oDtGVEBogHOuKnddgxMPclXmerNUNEQTFsJWsZhKXJKLtxFlod"}}'
+            multichain-cli chain1 sendfrom $address1 $address2 '{"asset1": 10, "data": {"json": {"list": [1, 2, 3], "message": "edPbujxwdXZlHhzzxnvZcRvTFvextSKiUfctgjWJPXLnMWxJin"}}}'
+        ]
         [
             multichain-cli chain1 publish stream1 key2 "a2fecf4afc0adfcafa23bccca61d4c2dee776c3d79dcfa07ec",
             multichain-cli chain1 publish stream1 key2 '{"text": "aQCMKovbgkjZbuQnZaCopFIzCbXdJXxMKNLwMOGnBIIJkoXMPa"}',
@@ -123,14 +138,14 @@ def gen_commands(*cmd, var_name: str = None) -> List[str]:
     """
     command_list = []
     cmd_parts = list(cmd)
-    data_indexes = [i for i, v in enumerate(cmd_parts) if '{DATA}' in v]
+    data_indexes = [i for i, v in enumerate(cmd_parts) if DATA_MARKER in v]
     if data_indexes:
         templates = [cmd_parts[index] for index in data_indexes]
-        # for f in (lambda: f'"{hex_data().lower()}"', lambda: text_data(), lambda: json_data()):
-        for i, s in enumerate((dq(hex_data().lower()), text_data(), json_data())):
+        for i, jd in enumerate((hex_data(), text_data(), json_data())):
             for data_index, template in zip(data_indexes, templates):
-                data = template.replace('{DATA}', s)
-                if template != "{DATA}" or i > 0:
+                add_sq = (template == dq(DATA_MARKER) and i > 0)
+                data = template.replace(dq(DATA_MARKER), json.dumps(jd))
+                if add_sq:
                     data = sq(data)
                 cmd_parts[data_index] = data
             command_list.append(raw_command(*cmd_parts))
@@ -147,53 +162,50 @@ def build_script(pause: bool) -> List[str]:
     key_names = [f"key{i}" for i in range(10, 20)]
     address_sed = "sed -n -E " + sq(r's/.*"address"\s*:\s*"(\w+)".*/\1/p')
     multi_items = [
-        {"for": "stream1", "keys": ["key3"], "data": {"text": ''.join(random.choices(string.ascii_letters, k=50))}},
-        {"for": "stream1", "keys": ["key4"], "data": {"text": ''.join(random.choices(string.ascii_letters, k=50))}},
+        {"for": "stream1", "keys": ["key3"], "data": text_data()},
+        {"for": "stream1", "keys": ["key4"], "data": text_data()},
     ]
 
-    commands = (
-            [HEADER.format(MCFOLDER=MULTICHAIN_BIN_DIR.resolve(), CHAIN=CHAIN_NAME,
-                           MCPARAMS=str(chain_path(CHAIN_NAME) / "params.dat"),
-                           MCCONF=str(chain_path(CHAIN_NAME) / "multichain.conf")).strip()]
-            + gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1')
-            + gen_commands('createkeypairs', '|', address_sed, var_name='address2')
-            + gen_commands('importaddress', '$address2', 'external')
-            + gen_commands('grant', '$address2', 'receive')
-            + gen_commands('create', 'stream', 'stream1', 'true')
-            + gen_commands('sendfrom', '$address1', '$address2', sq('{"": 0}'))
-            + gen_commands('issue', '$address1', sq('{"name": "asset1", "open": true, "restrict": "send"}'),
-                           '1000', '1', '0', sq(json_data()))
-            + gen_commands('issuemore', '$address1', 'asset1', '1000', '0', sq(json_data()))
-            + gen_commands('sendfrom', '$address1', '$address2', sq('{"asset1": 10}'))
-            + gen_commands('sendfrom', '$address1', '$address2', '{"asset1": 10, "data": {DATA}}')
-            + gen_commands('sendwithdatafrom', '$address1', '$address2', sq('{"asset1": 10}'), '{DATA}')
-            + gen_commands('sendwithdatafrom', '$address1', '$address2', sq('{"asset1": 10}'),
-                           '{"for": "stream1", "keys": ["key20"], "data": {DATA}}')
-            + gen_commands('sendwithdatafrom', '$address1', '$address2', sq('{"asset1": 10}'),
-                           '{"for": "stream1", "keys": ["key21"], "options": "offchain", "data": {DATA}}')
-            + gen_commands('listassettransactions', 'asset1', 'true')
+    commands = [HEADER.format(MCFOLDER=MULTICHAIN_BIN_DIR.resolve(), CHAIN=CHAIN_NAME,
+                              MCPARAMS=str(chain_path(CHAIN_NAME) / "params.dat"),
+                              MCCONF=str(chain_path(CHAIN_NAME) / "multichain.conf")).strip()]
+    commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
+    commands.extend(gen_commands('createkeypairs', '|', address_sed, var_name='address2'))
+    commands.extend(gen_commands('importaddress', '$address2', 'external'))
+    commands.extend(gen_commands('grant', '$address2', 'receive'))
+    commands.extend(gen_commands('create', 'stream', 'stream1', 'true'))
+    commands.extend(gen_commands('sendfrom', '$address1', '$address2', j({"": 0})))
+    commands.extend(gen_commands('issue', '$address1', j({"name": "asset1", "open": True, "restrict": "send"}),
+                                 '1000', '1', '0', j(json_data())))
+    commands.extend(gen_commands('issuemore', '$address1', 'asset1', '1000', '0', j(json_data())))
+    commands.extend(gen_commands('sendfrom', '$address1', '$address2', j({"asset1": 10})))
+    commands.extend(gen_commands('sendfrom', '$address1', '$address2', j({"asset1": 10, "data": DATA_MARKER})))
+    commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}), dq(DATA_MARKER)))
+    commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}),
+                                 j({"for": "stream1", "keys": ["key20"], "data": DATA_MARKER})))
+    commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}),
+                                 j({"for": "stream1", "keys": ["key21"], "options": "offchain", "data": DATA_MARKER})))
+    commands.extend(gen_commands('listassettransactions', 'asset1', 'true'))
 
-            + gen_commands('publish', 'stream1', 'key1', '{DATA}')
-            + gen_commands('publish', 'stream1', 'key2', '{DATA}', 'offchain')
-            + gen_commands('createrawsendfrom', '$address1', dq('{"$address2": 0}'), sq(json.dumps(multi_items)),
-                           'send')
-            + gen_commands('publish', 'stream1', sq(json.dumps(key_names)), '{DATA}')
-            + gen_commands('liststreamitems', 'stream1', 'true')
+    commands.extend(gen_commands('publish', 'stream1', 'key1', dq(DATA_MARKER)))
+    commands.extend(gen_commands('publish', 'stream1', 'key2', dq(DATA_MARKER), 'offchain'))
+    commands.extend(gen_commands('createrawsendfrom', '$address1', dq('{"$address2": 0}'), j(multi_items), 'send'))
+    commands.extend(gen_commands('publish', 'stream1', j(key_names), dq(DATA_MARKER)))
+    commands.extend(gen_commands('liststreamitems', 'stream1', 'true'))
 
-            # + gen_commands('create', 'stream', 'stream2', 'true', sq(json_data()))
-            # + gen_commands('liststreams', '"*"', 'true')
+    # commands.extend(gen_commands('create', 'stream', 'stream2', 'true', j(json_data())))
+    # commands.extend(gen_commands('liststreams', '"*"', 'true'))
 
-            + gen_commands('grant', '$address2', 'asset1.issue')
-            + gen_commands('grant', '$address2', 'stream1.write')
-            + gen_commands('listpermissions', '"asset1.*"', '"*"', 'true')
-            + gen_commands('listpermissions', '"stream1.*"', '"*"', 'true')
+    commands.extend(gen_commands('grant', '$address2', 'asset1.issue'))
+    commands.extend(gen_commands('grant', '$address2', 'stream1.write'))
+    commands.extend(gen_commands('listpermissions', '"asset1.*"', '"*"', 'true'))
+    commands.extend(gen_commands('listpermissions', '"stream1.*"', '"*"', 'true'))
 
-            + gen_commands('create', 'upgrade', 'upgradeStuff', 'false',
-                           sq(json.dumps({"max-std-element-size": 60000, "max-std-op-drops-count": 7})))
-            + gen_commands('listupgrades')
-            + gen_commands('approvefrom', '$address1', 'upgradeStuff', 'true')
-            + gen_commands('listupgrades')
-    )
+    commands.extend(gen_commands('create', 'upgrade', 'upgradeStuff', 'false',
+                                 j({"max-std-element-size": 60000, "max-std-op-drops-count": 7})))
+    commands.extend(gen_commands('listupgrades'))
+    commands.extend(gen_commands('approvefrom', '$address1', 'upgradeStuff', 'true'))
+    commands.extend(gen_commands('listupgrades'))
 
     return commands
 
