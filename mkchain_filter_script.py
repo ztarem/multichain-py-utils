@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -17,22 +18,23 @@ def build_script(options) -> List[str]:
     good_script = \
 """var filtertransaction = function () {
     var tx = getfiltertransaction();
-    var streams = liststreams();
+    var streaminfo = getstreaminfo('stream1');
+    mcprint('streaminfo.createtxid=' + streaminfo.createtxid);
     if (tx.vout.length < 2)
     {
-        return \\"Two transaction outputs required\\";
+        return 'Two transaction outputs required';
     }
 };"""
     exception_script = \
 """var filtertransaction = function () {
-    var tx = getfiltertransaction(\\"12345\\");
+    var tx = getfiltertransaction('12345');
     if (tx.vout.length < 2)
     {
-        return \\"Two transaction outputs required\\";
+        return 'Two transaction outputs required';
     }
 };"""
 
-    commands = [mkchain_utils.HEADER1.format(MCFOLDER=mkchain_utils.MULTICHAIN_BIN_DIR.resolve())]
+    commands = [mkchain_utils.HEADER1.format(MCFOLDER=mkchain_utils.MULTICHAIN_BIN_DIR.resolve(), NOW=datetime.now())]
     if options.init:
         commands.append(mkchain_utils.HEADER2.format(
             CHAIN=mkchain_utils.CHAIN_NAME,
@@ -41,23 +43,23 @@ def build_script(options) -> List[str]:
         ).strip())
     commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
     commands.extend(gen_commands('create', 'stream', 'stream1', 'true'))
-    commands.extend(['read -r -d \'\' good_script <<- END', good_script, 'END'])
+    commands.extend(["read -r -d '' good_script <<- END", good_script, "END"])
     commands.extend(gen_commands('publish', 'stream1', sq('["key1"]'), j({"text": "Hello from Zvi"}), var_name='key1_txid'))
     commands.extend(gen_commands('getrawtransaction', '$key1_txid', var_name='key1_tx'))
     commands.extend(gen_commands('create', 'txfilter', 'filter1', j({"for": "stream1"}), dq('$good_script')))
     commands.extend(gen_commands('approvefrom', '$address1', 'filter1', 'true'))
     commands.extend(gen_commands('runtxfilter', 'filter1', '$key1_tx'))
-    commands.append('no_filter_script=' + dq('var foo = \'bar\';'))
+    commands.append('no_filter_script=' + dq("var foo = 'bar';"))
     commands.extend(gen_commands('create', 'txfilter', 'filter2', j({"for": "stream1"}), dq('$no_filter_script')))
     commands.extend(gen_commands('approvefrom', '$address1', 'filter2', 'true'))
     commands.extend(gen_commands('runtxfilter', 'filter2', '$key1_tx'))
     # commands.extend(gen_commands('publish', 'stream1', sq('["key2"]'), j({"text": "Hello from Zvi"})))
-    commands.append('syntax_error_script=' + dq('var foo \'bar\';'))
+    commands.append('syntax_error_script=' + dq("var foo 'bar';"))
     commands.extend(gen_commands('create', 'txfilter', 'filter3', j({"for": "stream1"}), dq('$syntax_error_script')))
     commands.extend(gen_commands('approvefrom', '$address1', 'filter3', 'true'))
     commands.extend(gen_commands('runtxfilter', 'filter3', '$key1_tx'))
     # commands.extend(gen_commands('publish', 'stream1', sq('["key3"]'), j({"text": "Hello from Zvi"})))
-    commands.extend(['read -r -d \'\' exception_script <<- END', exception_script, 'END'])
+    commands.extend(["read -r -d '' exception_script <<- END", exception_script, "END"])
     commands.extend(gen_commands('create', 'txfilter', 'filter4', j({"for": "stream1"}), dq('$exception_script')))
     commands.extend(gen_commands('approvefrom', '$address1', 'filter4', 'true'))
     commands.extend(gen_commands('runtxfilter', 'filter4', '$key1_tx'))

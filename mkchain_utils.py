@@ -14,7 +14,9 @@ MULTICHAIN_BIN_DIR = Path("usr", "local", "bin")
 MULTICHAIN_HOME = Path.home() / ".multichain"
 CHAIN_NAME = "chain1"
 DATA_MARKER = '$DATA'
-HEADER1 = r"""#!/bin/bash -v
+HEADER1 = r"""#!/usr/bin/env bash
+# Automatically generated at {NOW}
+set -o verbose
 export PATH={MCFOLDER}:$PATH
 """
 HEADER2 = r"""
