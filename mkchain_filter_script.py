@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -45,7 +46,7 @@ var filtertransaction = function () {
 }
 """
 
-    commands = [mkchain_utils.HEADER1.format(MCFOLDER=mkchain_utils.MULTICHAIN_BIN_DIR.resolve())]
+    commands = [mkchain_utils.HEADER1.format(MCFOLDER=mkchain_utils.MULTICHAIN_BIN_DIR.resolve(), NOW=datetime.now())]
     if options.init:
         commands.append(mkchain_utils.HEADER2.format(
             CHAIN=mkchain_utils.CHAIN_NAME,

@@ -1,12 +1,12 @@
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import mkchain_utils
-from mkchain_utils import CHAIN_NAME, DATA_MARKER, HEADER, MULTICHAIN_BIN_DIR, chain_path, dq, gen_commands, j, \
-    json_data, sq, text_data, write_script
+from mkchain_utils import chain_path, dq, gen_commands, j, json_data, sq, text_data, write_script
 
 module_name = Path(__file__).stem
 _logger = logging.getLogger(module_name)
@@ -18,10 +18,12 @@ def build_script(pause: bool) -> List[str]:
     address_sed = "sed -n -E " + sq(r's/.*"address"\s*:\s*"(\w+)".*/\1/p')
     multi_items = [{"for": "stream1", "keys": [f"key{i}"], "data": text_data()} for i in (3, 4, 5)]
 
-    commands = [HEADER.format(MCFOLDER=MULTICHAIN_BIN_DIR.resolve(), CHAIN=CHAIN_NAME,
-                              PROTOCOL=mkchain_utils.PROTOCOL,
-                              MCPARAMS=str(chain_path(CHAIN_NAME) / "params.dat"),
-                              MCCONF=str(chain_path(CHAIN_NAME) / "multichain.conf")).strip()]
+    commands = [mkchain_utils.HEADER1.format(MCFOLDER=mkchain_utils.MULTICHAIN_BIN_DIR.resolve(), NOW=datetime.now()),
+                mkchain_utils.HEADER2.format(
+                    CHAIN=mkchain_utils.CHAIN_NAME,
+                    PROTOCOL=mkchain_utils.PROTOCOL,
+                              MCPARAMS=str(chain_path(mkchain_utils.CHAIN_NAME) / "params.dat"),
+                    MCCONF=str(chain_path(mkchain_utils.CHAIN_NAME) / "multichain.conf")).strip()]
     commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
     commands.extend(gen_commands('createkeypairs', '|', address_sed, var_name='address2'))
     commands.extend(gen_commands('importaddress', '$address2', 'external'))
@@ -32,18 +34,21 @@ def build_script(pause: bool) -> List[str]:
                                  '1000', '1', '0', j(json_data())))
     commands.extend(gen_commands('issuemore', '$address1', 'asset1', '1000', '0', j(json_data())))
     commands.extend(gen_commands('sendfrom', '$address1', '$address2', j({"asset1": 10})))
-    commands.extend(gen_commands('sendfrom', '$address1', '$address2', j({"asset1": 10, "data": DATA_MARKER})))
-    commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}), dq(DATA_MARKER)))
+    commands.extend(gen_commands('sendfrom', '$address1', '$address2',
+                                 j({"asset1": 10, "data": mkchain_utils.DATA_MARKER})))
+    commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2',
+                                 j({"asset1": 10}), dq(mkchain_utils.DATA_MARKER)))
     commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}),
-                                 j({"for": "stream1", "keys": ["key20"], "data": DATA_MARKER})))
+                                 j({"for": "stream1", "keys": ["key20"], "data": mkchain_utils.DATA_MARKER})))
     commands.extend(gen_commands('sendwithdatafrom', '$address1', '$address2', j({"asset1": 10}),
-                                 j({"for": "stream1", "keys": ["key21"], "options": "offchain", "data": DATA_MARKER})))
+                                 j({"for": "stream1", "keys": ["key21"], "options": "offchain",
+                                    "data": mkchain_utils.DATA_MARKER})))
     commands.extend(gen_commands('listassettransactions', 'asset1', 'true'))
 
-    commands.extend(gen_commands('publish', 'stream1', 'key1', dq(DATA_MARKER)))
-    commands.extend(gen_commands('publish', 'stream1', 'key2', dq(DATA_MARKER), 'offchain'))
+    commands.extend(gen_commands('publish', 'stream1', 'key1', dq(mkchain_utils.DATA_MARKER)))
+    commands.extend(gen_commands('publish', 'stream1', 'key2', dq(mkchain_utils.DATA_MARKER), 'offchain'))
     commands.extend(gen_commands('createrawsendfrom', '$address1', dq('{"$address2": 0}'), j(multi_items), 'send'))
-    commands.extend(gen_commands('publish', 'stream1', j(key_names), dq(DATA_MARKER)))
+    commands.extend(gen_commands('publish', 'stream1', j(key_names), dq(mkchain_utils.DATA_MARKER)))
     commands.extend(gen_commands('liststreamitems', 'stream1', 'true'))
 
     # commands.extend(gen_commands('create', 'stream', 'stream2', 'true', j(json_data())))
@@ -68,7 +73,7 @@ def get_options():
     parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to log")
     parser.add_argument("--mcbin", metavar="DIR", default=mkchain_utils.MULTICHAIN_BIN_DIR,
                         help="folder with multichain binaries (default: %(default)s)")
-    parser.add_argument("--mcchain", metavar="DIR", default =mkchain_utils.MULTICHAIN_HOME,
+    parser.add_argument("--mcchain", metavar="DIR", default=mkchain_utils.MULTICHAIN_HOME,
                         help="base folder for multichain chain data (default: %(default)s)")
     parser.add_argument("-c", "--chain", metavar="NAME", default=mkchain_utils.CHAIN_NAME,
                         help="chain name (default: %(default)s)")
