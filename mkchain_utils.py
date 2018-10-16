@@ -13,6 +13,7 @@ _logger = logging.getLogger(module_name)
 MULTICHAIN_BIN_DIR = Path("usr", "local", "bin")
 MULTICHAIN_HOME = Path.home() / ".multichain"
 CHAIN_NAME = "chain1"
+PROTOCOL = 20005
 DATA_MARKER = '$DATA'
 HEADER1 = r"""#!/bin/bash -v
 export PATH={MCFOLDER}:$PATH
@@ -21,7 +22,7 @@ HEADER2 = r"""
 multichain-cli {CHAIN} stop
 sleep 1
 rm -rf ~/.multichain/{CHAIN}
-multichain-util create {CHAIN}
+multichain-util create {CHAIN} {PROTOCOL}
 sleep 1
 multichaind {CHAIN} -daemon -autosubscribe=assets,streams -debug
 sleep 1

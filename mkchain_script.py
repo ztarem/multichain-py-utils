@@ -13,12 +13,13 @@ _logger = logging.getLogger(module_name)
 
 
 def build_script(pause: bool) -> List[str]:
-    _logger.debug(f"build_script(pause={pause})")
+    _logger.debug("build_script()")
     key_names = [f"key{i}" for i in range(10, 20)]
     address_sed = "sed -n -E " + sq(r's/.*"address"\s*:\s*"(\w+)".*/\1/p')
     multi_items = [{"for": "stream1", "keys": [f"key{i}"], "data": text_data()} for i in (3, 4, 5)]
 
     commands = [HEADER.format(MCFOLDER=MULTICHAIN_BIN_DIR.resolve(), CHAIN=CHAIN_NAME,
+                              PROTOCOL=mkchain_utils.PROTOCOL,
                               MCPARAMS=str(chain_path(CHAIN_NAME) / "params.dat"),
                               MCCONF=str(chain_path(CHAIN_NAME) / "multichain.conf")).strip()]
     commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
@@ -72,14 +73,15 @@ def get_options():
     parser.add_argument("-c", "--chain", metavar="NAME", default=mkchain_utils.CHAIN_NAME,
                         help="chain name (default: %(default)s)")
     parser.add_argument("-s", "--script", metavar="FILE", default="make_chain.sh", help="name of the output script")
-    parser.add_argument("-p", "--pause", action="store_true",
-                        help="Pause mining so all transactions are on the mempool")
+    parser.add_argument("-p", "--protocol", metavar="VER", type=int, default=mkchain_utils.PROTOCOL,
+                        help="protocol version (default: %(default)s)")
 
     options = parser.parse_args()
 
     if options.verbose:
         _logger.setLevel(logging.DEBUG)
     mkchain_utils.CHAIN_NAME = options.chain
+    mkchain_utils.PROTOCOL = options.protocol
 
     _logger.info(f"{module_name} - {parser.description}")
     if options.mcbin != mkchain_utils.MULTICHAIN_BIN_DIR:
@@ -90,7 +92,7 @@ def get_options():
         _logger.info(f"  MC Chains:   {options.mcchain}")
     _logger.info(f"  Chain name:  {options.chain}")
     _logger.info(f"  Script file: {options.script}")
-    _logger.info(f"  Pause:       {options.pause}")
+    _logger.info(f"  Protocol:    {mkchain_utils.PROTOCOL}")
 
     return options
 

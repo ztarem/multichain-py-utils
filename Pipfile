@@ -11,6 +11,7 @@ psutil = "*"
 requests = "*"
 "urllib3" = "*"
 Savoir = "*"
+python-vagrant = "*"
 
 [dev-packages]
 
