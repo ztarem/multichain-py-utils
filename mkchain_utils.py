@@ -26,7 +26,7 @@ sleep 1
 rm -rf ~/.multichain/{CHAIN}
 multichain-util create {CHAIN} {PROTOCOL}
 sleep 1
-multichaind {CHAIN} -daemon -autosubscribe=assets,streams -debug
+multichaind {CHAIN} -daemon -autosubscribe=assets,streams {DEBUG}
 sleep 1
 rpc_port=`sed -n -E 's/.*default-rpc-port\s*=\s*(\w+)\s*.*/\1/p' {MCPARAMS}`
 echo "rpcport=$rpc_port"

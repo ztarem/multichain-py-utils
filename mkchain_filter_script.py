@@ -41,6 +41,7 @@ var filtertransaction = function () {
     {
         return 'Two transaction outputs required';
     }
+    var z = Date.now();
     var x = Math.abs(-1.23);
     var y = Math.sin(1.23);
 }
@@ -51,12 +52,14 @@ var filtertransaction = function () {
         commands.append(mkchain_utils.HEADER2.format(
             CHAIN=mkchain_utils.CHAIN_NAME,
             PROTOCOL=mkchain_utils.PROTOCOL,
+            DEBUG="-debug" if options.debug else "",
             MCPARAMS=str(chain_path(mkchain_utils.CHAIN_NAME) / "params.dat"),
             MCCONF=str(chain_path(mkchain_utils.CHAIN_NAME) / "multichain.conf")
         ).strip())
     commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
     commands.extend(gen_commands('create', 'stream', 'stream1', 'true'))
-    commands.extend(gen_commands('publish', 'stream1', sq('["key1"]'), j({"text": "Hello from Zvi"}), var_name='key1_txid'))
+    commands.extend(gen_commands('publish', 'stream1', sq('["key1"]'), j({"text": "Hello from Zvi"}),
+                                 var_name='key1_txid'))
     commands.extend(gen_commands('getrawtransaction', dq('$key1_txid'), var_name='key1_tx'))
 
     commands.extend(["read -r -d '' good_script <<- END", good_script.strip(), "END"])
@@ -76,6 +79,14 @@ var filtertransaction = function () {
     commands.extend(["read -r -d '' math_script <<- END", math_script.strip(), "END"])
     commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$math_script'), dq('$key1_tx')))
 
+    commands.append('infinite_script=' + dq("var filtertransaction = function () { while (true) {}; }"))
+    for i in range(3):
+        commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$good_script'), dq('$key1_tx')))
+        commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$infinite_script'), dq('$key1_tx')))
+
+    commands.extend(['sleep 1'])
+    commands.extend(gen_commands('stop'))
+
     return commands
 
 
@@ -93,6 +104,7 @@ def get_options():
     parser.add_argument("-i", "--init", action="store_true", help="initialize the chain before poulating it")
     parser.add_argument("-p", "--protocol", metavar="VER", type=int, default=mkchain_utils.PROTOCOL,
                         help="protocol version (default: %(default)s)")
+    parser.add_argument("-d", "--debug", action="store_true", help="Turn on multichaind debugging")
 
     options = parser.parse_args()
 
@@ -112,6 +124,7 @@ def get_options():
     _logger.info(f"  Script file: {options.script}")
     _logger.info(f"  Init chain:  {options.init}")
     _logger.info(f"  Protocol:    {mkchain_utils.PROTOCOL}")
+    _logger.info(f"  MC Debug:    {options.debug}")
 
     return options
 

@@ -22,7 +22,8 @@ def build_script(pause: bool) -> List[str]:
                 mkchain_utils.HEADER2.format(
                     CHAIN=mkchain_utils.CHAIN_NAME,
                     PROTOCOL=mkchain_utils.PROTOCOL,
-                              MCPARAMS=str(chain_path(mkchain_utils.CHAIN_NAME) / "params.dat"),
+                    DEBUG="-debug" if options.debug else "",
+                    MCPARAMS=str(chain_path(mkchain_utils.CHAIN_NAME) / "params.dat"),
                     MCCONF=str(chain_path(mkchain_utils.CHAIN_NAME) / "multichain.conf")).strip()]
     commands.extend(gen_commands('listpermissions', 'issue', '|', address_sed, var_name='address1'))
     commands.extend(gen_commands('createkeypairs', '|', address_sed, var_name='address2'))
