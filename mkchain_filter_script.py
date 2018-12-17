@@ -80,8 +80,8 @@ var filtertransaction = function () {
     commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$math_script'), dq('$key1_tx')))
 
     commands.append('infinite_script=' + dq("var filtertransaction = function () { while (true) {}; }"))
-    for i in range(3):
-        commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$good_script'), dq('$key1_tx')))
+    for i in range(5):
+        # commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$good_script'), dq('$key1_tx')))
         commands.extend(gen_commands('testtxfilter', j({"for": "stream1"}), dq('$infinite_script'), dq('$key1_tx')))
 
     commands.extend(['sleep 1'])
