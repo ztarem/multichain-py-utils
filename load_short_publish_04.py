@@ -40,18 +40,29 @@ def create_stream(options: Namespace, api: Savoir):
     logger.info(f"create_stream(chain_name={options.chain!r}, stream_name={options.stream!r})")
 
     api.create("stream", options.stream, True)
-    print_tx(api, api.publish(options.stream, "key1", os.urandom(50).hex()))
-    if logger.isEnabledFor(logging.DEBUG):
-        pprint.pprint(api.liststreamitems(options.stream))
 
 
-def create_filter(options: Namespace, api: Savoir, jsfilter: str):
-    logger.info(f"create_filter(chain_name={options.chain!r}, stream_name={options.stream!r})")
+def create_tx_filter(options: Namespace, api: Savoir, jsfilter: str):
+    logger.info(f"create_tx_filter(chain_name={options.chain!r}, stream_name={options.stream!r})")
 
     address = api.listaddresses()[0]["address"]
-    print_tx(api, api.create("txfilter", "flt1", {"for": options.stream}, jsfilter))
-    print_tx(api, api.approvefrom(address, "flt1", True))
+    print_tx(api, api.create("txfilter", "txflt1", {"for": options.stream}, jsfilter))
+    print_tx(api, api.approvefrom(address, "txflt1", True))
     # wait_for_mining(options, api)
+
+
+def create_stream_filter(options: Namespace, api: Savoir, jsfilter: str):
+    logger.info(f"create_stream_filter(chain_name={options.chain!r}, stream_name={options.stream!r})")
+
+    address = api.listaddresses()[0]["address"]
+    print_tx(api, api.create("streamfilter", "strmflt1", {}, jsfilter))
+    print_tx(api, api.approvefrom(address, "strmflt1", {"for": options.stream, "approve": True}))
+    # wait_for_mining(options, api)
+
+
+def create_permissions(_options: Namespace, api: Savoir):
+    address = api.getnewaddress()
+    print_tx(api, api.grant(address, "send,receive,high1,low3"))
 
 
 def publish(options: Namespace, api: Savoir):
@@ -104,14 +115,19 @@ def main():
                                   logging.StreamHandler(sys.stdout)])
     logging.getLogger("Savoir").setLevel(logging.WARNING)
     options = get_options()
-    good_script = """
+    good_tx_script = """
 var filtertransaction = function () {
-    var tx = getfiltertransaction();
-    //var streaminfo = getstreaminfo('stream1');
-    //if (tx.vout.length < 2)
-    //{
-    //    return 'Two transaction outputs required';
-    //}
+var tx = getfiltertransaction();
+//var streaminfo = getstreaminfo('stream1');
+//if (tx.vout.length < 2)
+//{
+//    return 'Two transaction outputs required';
+//}
+};
+"""
+    good_stream_script = """
+var filterstreamitem = function () {
+    var tx = getfilterstreamitem();
 };
 """
 
@@ -119,8 +135,10 @@ var filtertransaction = function () {
         create_chain(options)
         adjust_config(options.chain)
     api = rpc_api(options.chain)
+    create_permissions(options, api)
     create_stream(options, api)
-    create_filter(options, api, good_script)
+    create_tx_filter(options, api, good_tx_script)
+    create_stream_filter(options, api, good_stream_script)
     publish(options, api)
     if not options.nostop:
         api.stop()
