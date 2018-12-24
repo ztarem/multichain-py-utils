@@ -1,41 +1,24 @@
 import logging
 import os
-import pprint
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from Savoir import Savoir
-
-from create_chain import adjust_config, create_chain, create_chain_options_parser, create_chain_update_options, rpc_api
+from api_utils import adjust_config, api_command, print_command, print_tx, rpc_api
+from create_chain import create_chain, create_chain_options_parser, create_chain_update_options
 from mkchain_utils import log_options
 
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
 
 
-def print_tx(api: Savoir, tx_id: str):
-    if logger.isEnabledFor(logging.DEBUG) and isinstance(tx_id, str):
-        pprint.pprint(api.getrawtransaction(tx_id, 1, is_log=False))
-
-
-def create_stream(chain_name: str, api: Savoir, stream_name: str) -> str:
+def create_stream(chain_name: str, stream_name: str) -> str:
     logger.debug(f"create_stream(chain_name={chain_name!r}, stream_name={stream_name!r})")
 
-    api.create("stream", stream_name, True)
-    tx_id = api.publish(stream_name, "key1", os.urandom(500).hex())
-    print_tx(api, tx_id)
-    if logger.isEnabledFor(logging.DEBUG):
-        pprint.pprint(api.liststreamitems(stream_name))
-    return api.getrawtransaction(tx_id)
-
-
-def test_filter(chain_name: str, api: Savoir, stream_name: str, jsfilter: str, tx: str):
-    logger.debug(f"test_filter(chain_name={chain_name!r}, stream_name={stream_name!r})")
-
-    result = api.testtxfilter({"for": stream_name}, jsfilter, tx)
-    if logger.isEnabledFor(logging.DEBUG):
-        pprint.pprint(result)
+    api_command("create", "stream", stream_name, True)
+    tx_id = print_tx("publish", stream_name, "key1", os.urandom(500).hex())
+    print_command("liststreamitems", stream_name)
+    return api_command("getrawtransaction", tx_id)
 
 
 def get_options():
@@ -85,15 +68,14 @@ function filtertransaction()
 
     if options.init:
         create_chain(options)
-    api = rpc_api(options.chain)
-    adjust_config(options.chain)
-    tx = create_stream(options.chain, api, options.stream)
-    test_filter(options.chain, api, options.stream, good_script, tx)
-    test_filter(options.chain, api, options.stream, bad_script, tx)
+    adjust_config(logger, options.chain)
+    rpc_api(logger, options.chain)
+    tx = create_stream(options.chain, options.stream)
+    print_command("testtxfilter", {"for": options.stream}, good_script, tx)
+    print_command("testtxfilter", {"for": options.stream}, bad_script, tx)
     for i in range(5):
-        # test_filter(options.chain, api, options.stream, infinite_script, tx)
-        api.testtxfilter({"for": options.stream}, infinite_script, tx)
-    api.stop()
+        api_command("testtxfilter", {"for": options.stream}, infinite_script, tx)
+    api_command("stop")
     return 0
 
 

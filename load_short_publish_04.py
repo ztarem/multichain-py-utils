@@ -1,15 +1,10 @@
 import logging
-import pprint
-import random
-import string
 import sys
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from time import sleep
 
-from Savoir import Savoir
-
-from create_chain import adjust_config, create_chain, create_chain_options_parser, create_chain_update_options, rpc_api
+from api_utils import adjust_config, api_command, print_command, print_tx, rand_string, rpc_api, wait_for_mining
+from create_chain import create_chain, create_chain_options_parser, create_chain_update_options
 from mkchain_utils import log_options
 
 module_name = Path(__file__).stem
@@ -18,77 +13,43 @@ CONST_PUBLISH_KEY_SIZE = 16
 CONST_PUBLISH_VALUE_SIZE = 32
 
 
-def print_command(api: Savoir, cmd: str, *args, **kwargs):
-    result = getattr(api, cmd)(*args, **kwargs)
-    if logger.isEnabledFor(logging.DEBUG) and 'error' not in result:
-        for line in pprint.pformat(result).split('\n'):
-            logger.debug(line)
-    return result
-
-
-def print_tx(api: Savoir, tx_id: str):
-    # if logger.isEnabledFor(logging.DEBUG) and isinstance(tx_id, str):
-    #     for line in pprint.pformat(api.getrawtransaction(tx_id, 1, is_log=False)).split('\n'):
-    #         logger.debug(line)
-    if isinstance(tx_id, str):
-        print_command(api, "getrawtransaction", tx_id, 1, is_log=False)
-
-
-def rand_string(size: int, is_hex: bool) -> str:
-    chars = string.hexdigits if is_hex else string.printable
-    return ''.join(random.choices(chars, k=size))
-
-
-def wait_for_mining(options: Namespace, api: Savoir):
-    current_blocks = api.getblockcount()
-    logger.info(f"current_blocks: {current_blocks}")
-    while api.getblockcount() <= current_blocks:
-        sleep(1)
-
-
-def create_stream(options: Namespace, api: Savoir):
-    logger.info(f"create_stream(chain_name={options.chain!r}, stream_name={options.stream!r})")
-
-    api.create("stream", options.stream, True)
-
-
-def create_tx_filter(options: Namespace, api: Savoir, jsfilter: str):
+def create_tx_filter(options: Namespace, filter_name: str, jsfilter: str):
     logger.info(f"create_tx_filter(chain_name={options.chain!r}, stream_name={options.stream!r})")
 
-    address = api.listaddresses()[0]["address"]
-    print_tx(api, api.create("txfilter", "txflt1", {"for": options.stream}, jsfilter))
-    print_tx(api, api.approvefrom(address, "txflt1", True))
+    address = api_command("listaddresses")[0]["address"]
+    print_tx("create", "txfilter", filter_name, {"for": options.stream}, jsfilter)
+    print_tx("approvefrom", address, filter_name, True)
     # wait_for_mining(options, api)
 
 
-def create_stream_filter(options: Namespace, api: Savoir, jsfilter: str):
+def create_stream_filter(options: Namespace, filter_name: str, jsfilter: str):
     logger.info(f"create_stream_filter(chain_name={options.chain!r}, stream_name={options.stream!r})")
 
-    address = api.listaddresses()[0]["address"]
-    print_tx(api, api.create("streamfilter", "strmflt1", {}, jsfilter))
-    print_tx(api, api.approvefrom(address, "strmflt1", {"for": options.stream, "approve": True}))
+    address = api_command("listaddresses")[0]["address"]
+    print_tx("create", "streamfilter", filter_name, {}, jsfilter)
+    print_tx("approvefrom", address, filter_name, {"for": options.stream, "approve": True})
     # wait_for_mining(options, api)
 
 
-def create_permissions(_options: Namespace, api: Savoir):
-    address = api.getnewaddress()
-    print_tx(api, api.grant(address, "send,receive,high1,low3"))
+def create_permissions(_options: Namespace):
+    address = api_command("getnewaddress")
+    print_tx("grant", address, "send,receive,high1,low3")
 
 
-def publish(options: Namespace, api: Savoir):
+def publish(options: Namespace):
     logger.info(f"publish(chain_name={options.chain!r}, stream_name={options.stream!r}, repeat={options.repeat})")
 
     for counter in range(options.repeat):
         key = rand_string(CONST_PUBLISH_KEY_SIZE, is_hex=False)
         value = rand_string(CONST_PUBLISH_VALUE_SIZE, is_hex=True)
-        api.publish(options.stream, key, value)
+        api_command("publish", options.stream, key, value)
         if not logger.isEnabledFor(logging.DEBUG):
             if counter % 100 == 0:
                 print()
                 print(f"{counter:8,}: ", end='', flush=True)
             print('.', end='', flush=True)
     print()
-    wait_for_mining(options, api)
+    wait_for_mining(options)
     logger.info("publish done")
 
 
@@ -97,7 +58,6 @@ def get_options():
     parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to Python log")
     parser.add_argument("-i", "--init", action="store_true", help="(re)create a chain")
     parser.add_argument("-s", "--stream", metavar="NAME", default="stream1", help="stream name (default: %(default)s)")
-
     parser.add_argument("-n", "--repeat", type=int, metavar="N", default=1000,
                         help="number of transactions to publish (default: %(default)s)")
 
@@ -141,21 +101,21 @@ function filterstreamitem () {
     proc = None
     if options.init:
         proc = create_chain(options)
-        adjust_config(options.chain)
-    api = rpc_api(options.chain)
-    create_permissions(options, api)
-    create_stream(options, api)
-    create_tx_filter(options, api, good_tx_script)
-    create_stream_filter(options, api, good_stream_script)
-    filters = print_command(api, "listtxfilters", is_log=False)
+        adjust_config(logger, options.chain)
+    rpc_api(logger, options.chain)
+    create_permissions(options)
+    api_command("create", "stream", options.stream, True)
+    create_tx_filter(options, "txflt1", good_tx_script)
+    create_stream_filter(options, "strmflt1", good_stream_script)
+    filters = print_command("listtxfilters", is_log=False)
     for name in (flt["name"] for flt in filters):
-        print_command(api, "getfiltercode", name)
-    filters = print_command(api, "liststreamfilters", is_log=False)
+        print_command("getfiltercode", name)
+    filters = print_command("liststreamfilters", is_log=False)
     for name in (flt["name"] for flt in filters):
-        print_command(api, "getfiltercode", name)
-    publish(options, api)
+        print_command("getfiltercode", name)
+    publish(options)
     if options.stop:
-        api.stop()
+        api_command("stop")
     return 0
 
 

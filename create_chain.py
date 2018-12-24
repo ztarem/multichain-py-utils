@@ -8,10 +8,9 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import Popen, STDOUT, call
 from time import sleep
-from typing import Any, Dict, List, Tuple
+from typing import Any, List, Tuple
 
 import psutil
-from Savoir import Savoir
 
 from mkchain_utils import log_options
 
@@ -110,33 +109,6 @@ def create_chain_update_options(options: Namespace) -> List[Tuple[str, Any]]:
     option_display.append(("Stop daemon", options.stop))
     option_display.append(("Debug", options.debug))
     return option_display
-
-
-def load_config(chain_name: str, config_name: str) -> Dict[str, str]:
-    logger.debug(f"load_config(chain_name={chain_name}, config_name={config_name})")
-    path = chain_path(chain_name) / config_name
-    config = {}
-    with open(path) as f:
-        for line in f:
-            parts = line.split('#', 1)[0].split('=', 1)
-            if len(parts) == 2:
-                config[parts[0].strip()] = parts[1].strip()
-    return config
-
-
-def rpc_api(chain_name: str) -> Savoir:
-    logger.debug(f"rpc_api(chain_name={chain_name!r})")
-    config = load_config(chain_name, "multichain.conf")
-    params = load_config(chain_name, "params.dat")
-    return Savoir(config["rpcuser"], config["rpcpassword"], "localhost", params["default-rpc-port"], chain_name)
-
-
-def adjust_config(chain_name: str):
-    logger.debug(f"adjust_config(chain_name={chain_name!r})")
-    params = load_config(chain_name, "params.dat")
-    logger.debug(f"rpc port = {params['default-rpc-port']}")
-    with open(chain_path(chain_name) / "multichain.conf", "a") as f:
-        f.write(f"rpcport={params['default-rpc-port']}\n")
 
 
 if __name__ == '__main__':
