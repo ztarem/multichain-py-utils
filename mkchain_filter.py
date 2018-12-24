@@ -8,6 +8,7 @@ from pathlib import Path
 from Savoir import Savoir
 
 from create_chain import adjust_config, create_chain, create_chain_options_parser, create_chain_update_options, rpc_api
+from mkchain_utils import log_options
 
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
@@ -43,16 +44,15 @@ def get_options():
     parser.add_argument("-i", "--init", action="store_true", help="(re)create a chain")
     parser.add_argument("-s", "--stream", metavar="NAME", default="stream1", help="stream name (default: %(default)s)")
 
-    logger.info(f"{module_name} - {parser.description}")
     options = parser.parse_args()
 
     if options.verbose:
         logger.setLevel(logging.DEBUG)
         logging.getLogger("Savoir").setLevel(logging.INFO)
-    create_chain_update_options(options)
-
-    logger.info(f"  Create: {options.init}")
-    logger.info(f"  Stream: {options.stream}")
+    option_display = create_chain_update_options(options)
+    option_display.append(("Create", options.init))
+    option_display.append(("Stream", options.stream))
+    log_options(parser, option_display)
 
     return options
 

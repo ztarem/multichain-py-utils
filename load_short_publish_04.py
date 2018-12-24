@@ -1,5 +1,4 @@
 import logging
-import os
 import pprint
 import random
 import string
@@ -11,6 +10,7 @@ from time import sleep
 from Savoir import Savoir
 
 from create_chain import adjust_config, create_chain, create_chain_options_parser, create_chain_update_options, rpc_api
+from mkchain_utils import log_options
 
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
@@ -18,10 +18,20 @@ CONST_PUBLISH_KEY_SIZE = 16
 CONST_PUBLISH_VALUE_SIZE = 32
 
 
-def print_tx(api: Savoir, tx_id: str):
-    if logger.isEnabledFor(logging.DEBUG) and isinstance(tx_id, str):
-        for line in pprint.pformat(api.getrawtransaction(tx_id, 1, is_log=False)).split('\n'):
+def print_command(api: Savoir, cmd: str, *args, **kwargs):
+    result = getattr(api, cmd)(*args, **kwargs)
+    if logger.isEnabledFor(logging.DEBUG) and 'error' not in result:
+        for line in pprint.pformat(result).split('\n'):
             logger.debug(line)
+    return result
+
+
+def print_tx(api: Savoir, tx_id: str):
+    # if logger.isEnabledFor(logging.DEBUG) and isinstance(tx_id, str):
+    #     for line in pprint.pformat(api.getrawtransaction(tx_id, 1, is_log=False)).split('\n'):
+    #         logger.debug(line)
+    if isinstance(tx_id, str):
+        print_command(api, "getrawtransaction", tx_id, 1, is_log=False)
 
 
 def rand_string(size: int, is_hex: bool) -> str:
@@ -91,17 +101,16 @@ def get_options():
     parser.add_argument("-n", "--repeat", type=int, metavar="N", default=1000,
                         help="number of transactions to publish (default: %(default)s)")
 
-    logger.info(f"{module_name} - {parser.description}")
     options = parser.parse_args()
 
     if options.verbose:
         logger.setLevel(logging.DEBUG)
         logging.getLogger("Savoir").setLevel(logging.INFO)
-    create_chain_update_options(options)
-
-    logger.info(f"  Create:    {options.init}")
-    logger.info(f"  Stream:    {options.stream}")
-    logger.info(f"  Repeats:   {options.repeat:,}")
+    option_display = create_chain_update_options(options)
+    option_display.append(("Create", options.init))
+    option_display.append(("Stream", options.stream))
+    option_display.append(("Repeats", options.repeat))
+    log_options(parser, option_display)
 
     return options
 
@@ -114,17 +123,18 @@ def main():
     options = get_options()
     good_tx_script = """
 var filtertransaction = function () {
-var tx = getfiltertransaction();
-//var streaminfo = getstreaminfo('stream1');
-//if (tx.vout.length < 2)
-//{
-//    return 'Two transaction outputs required';
-//}
+    var tx = getfiltertransaction();
+    if (tx.vout.length < 2) {
+        return 'Two transaction outputs required';
+    }
 };
 """
     good_stream_script = """
-var filterstreamitem = function () {
+function filterstreamitem () {
     var tx = getfilterstreamitem();
+    if (tx.vout.length < 2) {
+        return 'Two transaction outputs required';
+    }
 };
 """
 
@@ -137,8 +147,14 @@ var filterstreamitem = function () {
     create_stream(options, api)
     create_tx_filter(options, api, good_tx_script)
     create_stream_filter(options, api, good_stream_script)
+    filters = print_command(api, "listtxfilters", is_log=False)
+    for name in (flt["name"] for flt in filters):
+        print_command(api, "getfiltercode", name)
+    filters = print_command(api, "liststreamfilters", is_log=False)
+    for name in (flt["name"] for flt in filters):
+        print_command(api, "getfiltercode", name)
     publish(options, api)
-    if not options.nostop:
+    if options.stop:
         api.stop()
     return 0
 

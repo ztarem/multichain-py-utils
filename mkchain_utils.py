@@ -4,11 +4,12 @@ import os
 import random
 import stat
 import string
+from argparse import ArgumentParser
 from pathlib import Path
-from typing import List
+from typing import List, Tuple, Any
 
 module_name = Path(__file__).stem
-_logger = logging.getLogger(module_name)
+logger = logging.getLogger(module_name)
 
 MULTICHAIN_BIN_DIR = Path("usr", "local", "bin")
 MULTICHAIN_HOME = Path.home() / ".multichain"
@@ -160,8 +161,15 @@ def gen_commands(*cmd, var_name: str = None) -> List[str]:
 
 
 def write_script(script_name: str, commands: List[str]):
-    _logger.debug(f"write_script(script_name={script_name!r})")
+    logger.debug(f"write_script(script_name={script_name!r})")
     with open(script_name, 'w') as f:
         for cmd in commands:
             f.write(cmd + '\n')
     os.chmod(str(Path(script_name)), Path(script_name).stat().st_mode | stat.S_IXUSR)
+
+
+def log_options(parser: ArgumentParser, option_display: List[Tuple[str, Any]]):
+    label_width = max(len(label) for label, _ in option_display) + 1
+    logger.info(f"{parser.prog} - {parser.description}")
+    for label, value in option_display:
+        logger.info(f"  {label + ':':{label_width}} {value}")

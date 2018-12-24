@@ -8,15 +8,18 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from subprocess import Popen, STDOUT, call
 from time import sleep
-from typing import Dict
+from typing import Any, Dict, List, Tuple
 
 import psutil
 from Savoir import Savoir
 
+from mkchain_utils import log_options
+
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
 
-MULTICHAIN_BINDIR = None
+MULTICHAIN_BINDIR: str = None
+MULTICHAIN_DATADIR: str = None
 if sys.platform == "win32":
     MULTICHAIN_DATADIR = Path(os.environ["APPDATA"]) / "MultiChain"
 else:
@@ -42,11 +45,10 @@ def kill_multichaind_processes(chain_name: str):
         p.kill()
 
 
-# def create_chain(chain_name: str, warn: bool, custom_datadir: bool, verbose: bool):
 def create_chain(options: Namespace) -> Popen:
     logger.debug(f"create_chain(chain_name={options.chain!r}, warn={options.warn})")
     if MULTICHAIN_BINDIR:
-        os.environ["PATH"] = MULTICHAIN_BINDIR + os.pathsep + os.environ["PATH"]
+        os.environ["PATH"] = os.pathsep.join([MULTICHAIN_BINDIR, os.environ["PATH"]])
         logger.info(f'>>> Set $PATH={os.environ["PATH"]}')
     if chain_path(options.chain).exists():
         if options.warn:
@@ -84,28 +86,30 @@ def create_chain_options_parser() -> ArgumentParser:
     parser.add_argument("-c", "--chain", metavar="NAME", default="chain1",
                         help="chain name  (default: %(default)s)"
                              " (will overwrite existing unless -w/--warn is also specified)")
-    parser.add_argument("-w", "--warn", action="store_true", help="warn and exit if chain name already exists")
-    parser.add_argument("--nostop", action="store_true", help="don't stop daemon at end of script")
+    parser.add_argument("-w", "--warn", action="store_true", help="warn and exit if named chain already exists")
+    parser.add_argument("--no-stop", dest="stop", action="store_false", help="don't stop daemon at end of script")
     parser.add_argument("-d", "--debug", nargs="?", default=None, const="all",
                         help="enable debug messages in MultiChain log")
     return parser
 
 
-def create_chain_update_options(options: Namespace):
+def create_chain_update_options(options: Namespace) -> List[Tuple[str, Any]]:
     global MULTICHAIN_BINDIR, MULTICHAIN_DATADIR
 
+    option_display = []
     if options.verbose:
         logger.setLevel(logging.DEBUG)
     if options.datadir:
         MULTICHAIN_DATADIR = options.datadir
-        logger.info(f"  Data dir: {options.datadir}")
+        option_display.append(("Data dir", options.datadir))
     if options.bindir:
         MULTICHAIN_BINDIR = options.bindir
-        logger.info(f"  Binaries: {options.bindir}")
-    logger.info(f"  Chain:    {options.chain}")
-    logger.info(f"  Warn:     {options.warn}")
-    logger.info(f"  Stop:     {not options.nostop}")
-    logger.info(f"  Debug:    {options.debug}")
+        option_display.append(("Binaries", options.bindir))
+    option_display.append(("Chain", options.chain))
+    option_display.append(("Warn", options.warn))
+    option_display.append(("Stop daemon", options.stop))
+    option_display.append(("Debug", options.debug))
+    return option_display
 
 
 def load_config(chain_name: str, config_name: str) -> Dict[str, str]:
@@ -142,7 +146,8 @@ if __name__ == '__main__':
 
         logger.info(f"{module_name} - {parser.description}")
         options = parser.parse_args()
-        create_chain_update_options(options)
+        option_display = create_chain_update_options(options)
+        log_options(parser, option_display)
 
         return options
 

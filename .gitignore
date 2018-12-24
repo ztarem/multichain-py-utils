@@ -6,3 +6,5 @@ venv*/
 *.bin
 *.dat
 *.lock
+
+__pycache__/

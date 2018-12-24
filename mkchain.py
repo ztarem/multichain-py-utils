@@ -8,6 +8,7 @@ from time import sleep
 from Savoir import Savoir
 
 from create_chain import adjust_config, create_chain, create_chain_options_parser, create_chain_update_options, rpc_api
+from mkchain_utils import log_options
 
 logger = logging.getLogger("mkchain")
 
@@ -102,17 +103,16 @@ def get_options():
     parser.add_argument("-a", "--asset", metavar="NAME", default="asset1", help="asset name (default: %(default)s)")
     parser.add_argument("-p", "--pause", action="store_true", help="Create transaction and pause mining")
 
-    logger.info(f"mkchain.py - {parser.description}")
     options = parser.parse_args()
 
     if options.verbose:
         logger.setLevel(logging.DEBUG)
         logging.getLogger("Savoir").setLevel(logging.INFO)
-    create_chain_update_options(options)
-
-    logger.info(f"  Stream:    {'None' if options.nostream else options.stream}")
-    logger.info(f"  Asset:     {'None' if options.noasset else options.asset}")
-    logger.info(f"  Pause:     {options.pause}")
+    option_display = create_chain_update_options(options)
+    option_display.append(("Stream", {'None' if options.nostream else options.stream}))
+    option_display.append(("Asset", {'None' if options.noasset else options.asset}))
+    option_display.append(("Pause", options.pause))
+    log_options(parser, option_display)
 
     return options
 
