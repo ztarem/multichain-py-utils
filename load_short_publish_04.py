@@ -85,7 +85,6 @@ def publish(options: Namespace, api: Savoir):
 def get_options():
     parser = ArgumentParser(description="Build a new chain with a stream", parents=[create_chain_options_parser()])
     parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to Python log")
-    parser.add_argument("-d", "--debug", help="enable debug messages in MultiChain log")
     parser.add_argument("-i", "--init", action="store_true", help="(re)create a chain")
     parser.add_argument("-s", "--stream", metavar="NAME", default="stream1", help="stream name (default: %(default)s)")
 
@@ -102,8 +101,6 @@ def get_options():
 
     logger.info(f"  Create:    {options.init}")
     logger.info(f"  Stream:    {options.stream}")
-    if options.init:
-        logger.info(f"  Debug:     {options.debug}")
     logger.info(f"  Repeats:   {options.repeat:,}")
 
     return options
@@ -131,8 +128,9 @@ var filterstreamitem = function () {
 };
 """
 
+    proc = None
     if options.init:
-        create_chain(options)
+        proc = create_chain(options)
         adjust_config(options.chain)
     api = rpc_api(options.chain)
     create_permissions(options, api)

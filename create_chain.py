@@ -43,7 +43,7 @@ def kill_multichaind_processes(chain_name: str):
 
 
 # def create_chain(chain_name: str, warn: bool, custom_datadir: bool, verbose: bool):
-def create_chain(options: Namespace):
+def create_chain(options: Namespace) -> Popen:
     logger.debug(f"create_chain(chain_name={options.chain!r}, warn={options.warn})")
     if MULTICHAIN_BINDIR:
         os.environ["PATH"] = MULTICHAIN_BINDIR + os.pathsep + os.environ["PATH"]
@@ -63,12 +63,18 @@ def create_chain(options: Namespace):
     call(cmd)
     sleep(1)
 
-    cmd = ["multichaind", options.chain, "-daemon", "-autosubscribe=assets,streams", f"--datadir={MULTICHAIN_DATADIR}"]
-    if options.verbose:
-        cmd.append("-debug")
+    cmd = ["multichaind", options.chain, "-autosubscribe=assets,streams", f"--datadir={MULTICHAIN_DATADIR}"]
+    if sys.platform != "win32":
+        cmd.append("-daemon")
+    if options.debug:
+        arg = "-debug"
+        if options.debug != "all":
+            arg += f"={options.debug}"
+        cmd.append(arg)
     logger.info(f">>> {' '.join(cmd)}")
-    Popen(cmd, stderr=STDOUT, close_fds=True)
-    sleep(2)
+    proc = Popen(cmd, stderr=STDOUT, close_fds=True)
+    sleep(5)
+    return proc
 
 
 def create_chain_options_parser() -> ArgumentParser:
@@ -80,6 +86,8 @@ def create_chain_options_parser() -> ArgumentParser:
                              " (will overwrite existing unless -w/--warn is also specified)")
     parser.add_argument("-w", "--warn", action="store_true", help="warn and exit if chain name already exists")
     parser.add_argument("--nostop", action="store_true", help="don't stop daemon at end of script")
+    parser.add_argument("-d", "--debug", nargs="?", default=None, const="all",
+                        help="enable debug messages in MultiChain log")
     return parser
 
 
@@ -97,6 +105,7 @@ def create_chain_update_options(options: Namespace):
     logger.info(f"  Chain:    {options.chain}")
     logger.info(f"  Warn:     {options.warn}")
     logger.info(f"  Stop:     {not options.nostop}")
+    logger.info(f"  Debug:    {options.debug}")
 
 
 def load_config(chain_name: str, config_name: str) -> Dict[str, str]:
