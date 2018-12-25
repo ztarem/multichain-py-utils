@@ -4,6 +4,7 @@ import os
 import random
 import stat
 import string
+import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import List, Tuple, Any
@@ -11,8 +12,12 @@ from typing import List, Tuple, Any
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
 
-MULTICHAIN_BIN_DIR = Path("usr", "local", "bin")
-MULTICHAIN_HOME = Path.home() / ".multichain"
+MULTICHAIN_BINDIR: str = None
+MULTICHAIN_DATADIR: Path = None
+if sys.platform == "win32":
+    MULTICHAIN_DATADIR = Path(os.environ["APPDATA"]) / "MultiChain"
+else:
+    MULTICHAIN_DATADIR = Path.home() / ".multichain"
 CHAIN_NAME = "chain1"
 PROTOCOL = 20005
 DATA_MARKER = '$DATA'
@@ -37,7 +42,7 @@ echo "rpcport=$rpc_port" >> {MCCONF}
 
 def chain_path(chain_name: str) -> Path:
     """ Get the folder containing chain `chain_name`. """
-    return MULTICHAIN_HOME / chain_name
+    return MULTICHAIN_DATADIR / chain_name
 
 
 def dq(s: str) -> str:

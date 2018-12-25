@@ -4,38 +4,33 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 
-from api_utils import adjust_config, api_command, print_command, print_tx, rpc_api
-from create_chain import create_chain, create_chain_options_parser, create_chain_update_options
-from mkchain_utils import log_options
+from creator.chain import Chain
+from creator.rpc_api import RpcApi
 
 module_name = Path(__file__).stem
 logger = logging.getLogger(module_name)
 
 
-def create_stream(chain_name: str, stream_name: str) -> str:
-    logger.debug(f"create_stream(chain_name={chain_name!r}, stream_name={stream_name!r})")
+def create_stream(api: RpcApi, stream_name: str) -> str:
+    logger.debug(f"create_stream(stream_name={stream_name!r})")
 
-    api_command("create", "stream", stream_name, True)
-    tx_id = print_tx("publish", stream_name, "key1", os.urandom(500).hex())
-    print_command("liststreamitems", stream_name)
-    return api_command("getrawtransaction", tx_id)
+    api.command("create", "stream", stream_name, True)
+    tx_id = api.print_tx("publish", stream_name, "key1", os.urandom(500).hex())
+    api.print_command("liststreamitems", stream_name)
+    return api.command("getrawtransaction", tx_id)
 
 
-def get_options():
-    parser = ArgumentParser(description="Build a new chain with a stream", parents=[create_chain_options_parser()])
-    parser.add_argument("-v", "--verbose", action="store_true", help="write debug messages to log")
+def get_options(chain: Chain):
+    parser = ArgumentParser(description="Build a new chain with a stream", parents=[chain.options_parser()])
     parser.add_argument("-i", "--init", action="store_true", help="(re)create a chain")
     parser.add_argument("-s", "--stream", metavar="NAME", default="stream1", help="stream name (default: %(default)s)")
 
     options = parser.parse_args()
 
-    if options.verbose:
-        logger.setLevel(logging.DEBUG)
-        logging.getLogger("Savoir").setLevel(logging.INFO)
-    option_display = create_chain_update_options(options)
+    option_display = chain.process_options(options)
     option_display.append(("Create", options.init))
     option_display.append(("Stream", options.stream))
-    log_options(parser, option_display)
+    chain.log_options(parser, option_display)
 
     return options
 
@@ -43,7 +38,8 @@ def get_options():
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
     logging.getLogger("Savoir").setLevel(logging.WARNING)
-    options = get_options()
+    chain = Chain(logger)
+    options = get_options(chain)
 
     good_script = """
 var filtertransaction = function () {
@@ -66,16 +62,19 @@ function filtertransaction()
 """
     infinite_script = "var filtertransaction = function () { while (true) {}; };"
 
+    _proc = None
     if options.init:
-        create_chain(options)
-    adjust_config(logger, options.chain)
-    rpc_api(logger, options.chain)
-    tx = create_stream(options.chain, options.stream)
-    print_command("testtxfilter", {"for": options.stream}, good_script, tx)
-    print_command("testtxfilter", {"for": options.stream}, bad_script, tx)
+        _proc = chain.create()
+        api = RpcApi(logger, chain.name, options.verbose)
+        api.adjust_config()
+    else:
+        api = RpcApi(logger, chain.name, options.verbose)
+    tx = create_stream(api, options.stream)
+    api.print_command("testtxfilter", {"for": options.stream}, good_script, tx)
+    api.print_command("testtxfilter", {"for": options.stream}, bad_script, tx)
     for i in range(5):
-        api_command("testtxfilter", {"for": options.stream}, infinite_script, tx)
-    api_command("stop")
+        api.command("testtxfilter", {"for": options.stream}, infinite_script, tx)
+    api.command("stop")
     return 0
 
 
